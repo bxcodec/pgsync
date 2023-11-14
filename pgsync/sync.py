@@ -69,6 +69,7 @@ class Sync(Base, metaclass=Singleton):
         verbose: bool = False,
         validate: bool = True,
         repl_slots: bool = True,
+        is_daemon=False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -102,6 +103,7 @@ class Sync(Base, metaclass=Singleton):
             self._plugins: Plugins = Plugins("plugins", self.plugins)
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
         self.count: dict = dict(xlog=0, db=0, redis=0)
+        self.is_daemon = is_daemon
 
     def validate(self, repl_slots: bool = True) -> None:
         """Perform all validation right away."""
@@ -1017,6 +1019,9 @@ class Sync(Base, metaclass=Singleton):
         :return: The current checkpoint value.
         :rtype: int
         """
+        if self.is_daemon:
+            return 0
+
         if os.path.exists(self._checkpoint_file):
             with open(self._checkpoint_file, "r") as fp:
                 self._checkpoint: int = int(fp.read().split()[0])
@@ -1031,6 +1036,8 @@ class Sync(Base, metaclass=Singleton):
         :type value: Optional[str]
         :raises ValueError: If the value is None.
         """
+        if self.is_daemon:
+            return
         if value is None:
             raise ValueError("Cannot assign a None value to checkpoint")
         with open(self._checkpoint_file, "w+") as fp:
@@ -1215,13 +1222,9 @@ class Sync(Base, metaclass=Singleton):
         if txids != set([None]):
             self.checkpoint: int = min(min(txids), self.txid_current) - 1
 
-    def pull(self, daemon=False) -> None:
+    def pull(self) -> None:
         """Pull data from db."""
-
         txmin: int = self.checkpoint
-        if daemon:
-            txmin = sys.maxint
-
         txmax: int = self.txid_current
         logger.debug(f"pull txmin: {txmin} - txmax: {txmax}")
         # forward pass sync
@@ -1308,7 +1311,7 @@ class Sync(Base, metaclass=Singleton):
             for _ in range(nthreads_polldb):
                 self.poll_db()
             # sync up to current transaction_id
-            self.pull(daemon=True)
+            self.pull()
             # start a background worker consumer thread to
             # poll Redis and populate Elasticsearch/OpenSearch
             self.poll_redis()
@@ -1449,8 +1452,9 @@ def main(
 
         else:
             for document in config_loader(config):
-                sync: Sync = Sync(document, verbose=verbose, **kwargs)
-                sync.pull(daemon=daemon)
+                sync: Sync = Sync(document, verbose=verbose,
+                                  is_daemon=daemon ** kwargs)
+                sync.pull()
                 if daemon:
                     sync.receive(nthreads_polldb)
 
