@@ -1453,7 +1453,7 @@ def main(
         else:
             for document in config_loader(config):
                 sync: Sync = Sync(document, verbose=verbose,
-                                  is_daemon=daemon ** kwargs)
+                                  is_daemon=daemon, ** kwargs)
                 sync.pull()
                 if daemon:
                     sync.receive(nthreads_polldb)
