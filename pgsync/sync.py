@@ -1215,9 +1215,13 @@ class Sync(Base, metaclass=Singleton):
         if txids != set([None]):
             self.checkpoint: int = min(min(txids), self.txid_current) - 1
 
-    def pull(self) -> None:
+    def pull(self, daemon=False) -> None:
         """Pull data from db."""
+
         txmin: int = self.checkpoint
+        if daemon:
+            txmin = sys.maxint
+
         txmax: int = self.txid_current
         logger.debug(f"pull txmin: {txmin} - txmax: {txmax}")
         # forward pass sync
@@ -1304,7 +1308,7 @@ class Sync(Base, metaclass=Singleton):
             for _ in range(nthreads_polldb):
                 self.poll_db()
             # sync up to current transaction_id
-            self.pull()
+            self.pull(daemon=True)
             # start a background worker consumer thread to
             # poll Redis and populate Elasticsearch/OpenSearch
             self.poll_redis()
@@ -1446,7 +1450,7 @@ def main(
         else:
             for document in config_loader(config):
                 sync: Sync = Sync(document, verbose=verbose, **kwargs)
-                sync.pull()
+                sync.pull(daemon=daemon)
                 if daemon:
                     sync.receive(nthreads_polldb)
 
