@@ -1020,7 +1020,7 @@ class Sync(Base, metaclass=Singleton):
         :rtype: int
         """
         if self.is_daemon:
-            return 0
+            return sys.maxsize
 
         if os.path.exists(self._checkpoint_file):
             with open(self._checkpoint_file, "r") as fp:
