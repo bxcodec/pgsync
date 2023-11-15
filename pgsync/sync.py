@@ -1232,6 +1232,7 @@ class Sync(Base, metaclass=Singleton):
 
     def pull(self) -> None:
         """Pull data from db."""
+        print(f"self.checkpoint: {self.checkpoint}")
         txmin: int = self.checkpoint
         txmax: int = self.txid_current
         logger.debug(f"pull txmin: {txmin} - txmax: {txmax}")
