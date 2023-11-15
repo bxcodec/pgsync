@@ -31,11 +31,15 @@ class RedisCheckpoint(object):
 
     def getCheckpointValue(self) -> int:
         """Get Checkpoint value"""
-        return self.__db.get(self.key)
+        checkpoint_value = self.__db.get(self.key)
+        try:
+            int(checkpoint_value) if checkpoint_value is not None else 0
+        except ValueError:
+            return 0
 
     def setCheckpoint(self, checkpoint: int) -> None:
         """Set Checkpoint to Redis"""
-        self.__db.set(name=self.key, value=checkpoint)
+        self.__db.set(name=self.key, value=str(checkpoint))
 
     def deleteCheckpoint(self) -> None:
         """Delete all items from the checkpoint key"""
