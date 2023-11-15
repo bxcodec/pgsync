@@ -33,7 +33,7 @@ class RedisCheckpoint(object):
         """Get Checkpoint value"""
         checkpoint_value = self.__db.get(self.key)
         try:
-            int(checkpoint_value) if checkpoint_value is not None else 0
+            return int(checkpoint_value) if checkpoint_value is not None else 0
         except ValueError:
             return 0
 

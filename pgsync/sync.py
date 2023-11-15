@@ -1027,6 +1027,8 @@ class Sync(Base, metaclass=Singleton):
         """
         if self.use_redis_checkpoint:
             self._checkpoint: int = self.redis_checkpoint.getCheckpointValue()
+            print(
+                f"redis checkpoint value: {self._checkpoint}, {self.redis_checkpoint.getCheckpointValue()}")
         elif os.path.exists(self._checkpoint_file):
             with open(self._checkpoint_file, "r") as fp:
                 self._checkpoint: int = int(fp.read().split()[0])
