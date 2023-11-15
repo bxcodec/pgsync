@@ -304,13 +304,15 @@ class Sync(Base, metaclass=Singleton):
         """Drop the database triggers and replication slot."""
 
         join_queries: bool = settings.JOIN_QUERIES
-
-        try:
-            os.unlink(self._checkpoint_file)
-        except (OSError, FileNotFoundError):
-            logger.warning(
-                f"Checkpoint file not found: {self._checkpoint_file}"
-            )
+        if self.use_redis_checkpoint:
+            self.redis_checkpoint.deleteCheckpoint()
+        else:
+            try:
+                os.unlink(self._checkpoint_file)
+            except (OSError, FileNotFoundError):
+                logger.warning(
+                    f"Checkpoint file not found: {self._checkpoint_file}"
+                )
 
         self.redis_queue.delete()
 
@@ -1023,9 +1025,8 @@ class Sync(Base, metaclass=Singleton):
         :rtype: int
         """
         if self.use_redis_checkpoint:
-            return self.redis_checkpoint.getCheckpointValue()
-
-        if os.path.exists(self._checkpoint_file):
+            self._checkpoint: int = self.redis_checkpoint.getCheckpointValue()
+        elif os.path.exists(self._checkpoint_file):
             with open(self._checkpoint_file, "r") as fp:
                 self._checkpoint: int = int(fp.read().split()[0])
         return self._checkpoint
@@ -1039,13 +1040,15 @@ class Sync(Base, metaclass=Singleton):
         :type value: Optional[str]
         :raises ValueError: If the value is None.
         """
-        if self.use_redis_checkpoint:
-            self.redis_checkpoint.setCheckpoint(value)
-            return
+
         if value is None:
             raise ValueError("Cannot assign a None value to checkpoint")
-        with open(self._checkpoint_file, "w+") as fp:
-            fp.write(f"{value}\n")
+
+        if self.use_redis_checkpoint:
+            self.redis_checkpoint.setCheckpoint(value)
+        else:
+            with open(self._checkpoint_file, "w+") as fp:
+                fp.write(f"{value}\n")
         self._checkpoint: int = value
 
     def _poll_redis(self) -> None:
@@ -1458,6 +1461,7 @@ def main(
                         verbose=verbose,
                         use_redis_checkpoint=settings.USE_REDIS_CHECKPOINT,
                         **kwargs)
+
                     sync.pull()
                 time.sleep(settings.POLL_INTERVAL)
 
