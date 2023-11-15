@@ -45,6 +45,7 @@ from .redisqueue import RedisQueue
 from .search_client import SearchClient
 from .singleton import Singleton
 from .transform import Transform
+from .redischeckpoint import RedisCheckpoint
 from .utils import (
     chunks,
     compiled_query,
@@ -69,8 +70,8 @@ class Sync(Base, metaclass=Singleton):
         verbose: bool = False,
         validate: bool = True,
         repl_slots: bool = True,
-        is_daemon=False,
-        **kwargs,
+        use_redis_checkpoint: bool = False
+        ** kwargs,
     ) -> None:
         """Constructor."""
         self.index: str = document.get("index") or document["database"]
@@ -93,7 +94,12 @@ class Sync(Base, metaclass=Singleton):
         self._checkpoint_file: str = os.path.join(
             settings.CHECKPOINT_PATH, f".{self.__name}"
         )
-        self.redis: RedisQueue = RedisQueue(self.__name)
+        self.redis_queue: RedisQueue = RedisQueue(self.__name)
+        if use_redis_checkpoint:
+            self.redis_checkpoint: RedisCheckpoint = RedisCheckpoint(
+                self.__name)
+            self.use_redis_checkpoint = use_redis_checkpoint
+
         self.tree: Tree = Tree(self.models)
         self.tree.build(self.nodes)
         if validate:
@@ -103,7 +109,6 @@ class Sync(Base, metaclass=Singleton):
             self._plugins: Plugins = Plugins("plugins", self.plugins)
         self.query_builder: QueryBuilder = QueryBuilder(verbose=verbose)
         self.count: dict = dict(xlog=0, db=0, redis=0)
-        self.is_daemon = is_daemon
 
     def validate(self, repl_slots: bool = True) -> None:
         """Perform all validation right away."""
@@ -309,7 +314,7 @@ class Sync(Base, metaclass=Singleton):
                 f"Checkpoint file not found: {self._checkpoint_file}"
             )
 
-        self.redis.delete()
+        self.redis_queue.delete()
 
         for schema in self.schemas:
             tables: Set = set()
@@ -1019,8 +1024,8 @@ class Sync(Base, metaclass=Singleton):
         :return: The current checkpoint value.
         :rtype: int
         """
-        if self.is_daemon:
-            return sys.maxsize
+        if self.use_redis_checkpoint:
+            return self.redis_checkpoint.getCheckpointValue()
 
         if os.path.exists(self._checkpoint_file):
             with open(self._checkpoint_file, "r") as fp:
@@ -1036,7 +1041,8 @@ class Sync(Base, metaclass=Singleton):
         :type value: Optional[str]
         :raises ValueError: If the value is None.
         """
-        if self.is_daemon:
+        if self.use_redis_checkpoint:
+            self.redis_checkpoint.setCheckpoint(value)
             return
         if value is None:
             raise ValueError("Cannot assign a None value to checkpoint")
@@ -1045,7 +1051,7 @@ class Sync(Base, metaclass=Singleton):
         self._checkpoint: int = value
 
     def _poll_redis(self) -> None:
-        payloads: list = self.redis.pop()
+        payloads: list = self.redis_queue.pop()
         if payloads:
             logger.debug(f"poll_redis: {payloads}")
             self.count["redis"] += len(payloads)
@@ -1063,7 +1069,7 @@ class Sync(Base, metaclass=Singleton):
             self._poll_redis()
 
     async def _async_poll_redis(self) -> None:
-        payloads: list = self.redis.pop()
+        payloads: list = self.redis_queue.pop()
         if payloads:
             logger.debug(f"poll_redis: {payloads}")
             self.count["redis"] += len(payloads)
@@ -1105,7 +1111,7 @@ class Sync(Base, metaclass=Singleton):
             ):
                 # Catch any hanging items from the last poll
                 if payloads:
-                    self.redis.push(payloads)
+                    self.redis_queue.push(payloads)
                     payloads = []
                 continue
 
@@ -1117,7 +1123,7 @@ class Sync(Base, metaclass=Singleton):
 
             while conn.notifies:
                 if len(payloads) >= settings.REDIS_WRITE_CHUNK_SIZE:
-                    self.redis.push(payloads)
+                    self.redis_queue.push(payloads)
                     payloads = []
                 notification: AnyStr = conn.notifies.pop(0)
                 if notification.channel == self.database:
@@ -1145,7 +1151,7 @@ class Sync(Base, metaclass=Singleton):
             if notification.channel == self.database:
                 payload = json.loads(notification.payload)
                 if self.index in payload["indices"]:
-                    self.redis.push([payload])
+                    self.redis_queue.push([payload])
                     logger.debug(f"on_notify: {payload}")
                     self.count["db"] += 1
 
@@ -1274,7 +1280,7 @@ class Sync(Base, metaclass=Singleton):
             f"Xlog: [{self.count['xlog']:,}] => "
             f"Db: [{self.count['db']:,}] => "
             f"Redis: [total = {self.count['redis']:,} "
-            f"pending = {self.redis.qsize:,}] => "
+            f"pending = {self.redis_queue.qsize:,}] => "
             f"{self.search_client.name}: [{self.search_client.doc_count:,}]"
             f"...\n"
         )
@@ -1440,20 +1446,29 @@ def main(
     with Timer():
         if analyze:
             for document in config_loader(config):
-                sync: Sync = Sync(document, verbose=verbose, **kwargs)
+                sync: Sync = Sync(document,
+                                  verbose=verbose,
+                                  use_redis_checkpoint=settings.USE_REDIS_CHECKPOINT,
+                                  **kwargs)
                 sync.analyze()
 
         elif polling:
             while True:
                 for document in config_loader(config):
-                    sync: Sync = Sync(document, verbose=verbose, **kwargs)
+                    sync: Sync = Sync(
+                        document,
+                        verbose=verbose,
+                        use_redis_checkpoint=settings.USE_REDIS_CHECKPOINT,
+                        **kwargs)
                     sync.pull()
                 time.sleep(settings.POLL_INTERVAL)
 
         else:
             for document in config_loader(config):
-                sync: Sync = Sync(document, verbose=verbose,
-                                  is_daemon=daemon, ** kwargs)
+                sync: Sync = Sync(document,
+                                  verbose=verbose,
+                                  use_redis_checkpoint=settings.USE_REDIS_CHECKPOINT,
+                                  ** kwargs)
                 sync.pull()
                 if daemon:
                     sync.receive(nthreads_polldb)
