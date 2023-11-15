@@ -1468,7 +1468,7 @@ def main(
                 sync: Sync = Sync(document,
                                   verbose=verbose,
                                   use_redis_checkpoint=settings.USE_REDIS_CHECKPOINT,
-                                  ** kwargs)
+                                  **kwargs)
                 sync.pull()
                 if daemon:
                     sync.receive(nthreads_polldb)
