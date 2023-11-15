@@ -95,10 +95,8 @@ class Sync(Base, metaclass=Singleton):
             settings.CHECKPOINT_PATH, f".{self.__name}"
         )
         self.redis_queue: RedisQueue = RedisQueue(self.__name)
-        if use_redis_checkpoint:
-            self.redis_checkpoint: RedisCheckpoint = RedisCheckpoint(
-                self.__name)
-            self.use_redis_checkpoint = use_redis_checkpoint
+        self.use_redis_checkpoint = use_redis_checkpoint
+        self.redis_checkpoint: RedisCheckpoint = RedisCheckpoint(self.__name)
 
         self.tree: Tree = Tree(self.models)
         self.tree.build(self.nodes)
