@@ -158,18 +158,19 @@ class Sync(Base, metaclass=Singleton):
                 f'Make sure you have run the "bootstrap" command.'
             )
 
-        # ensure the checkpoint dirpath is valid
-        if not os.path.exists(settings.CHECKPOINT_PATH):
-            raise RuntimeError(
-                f"Ensure the checkpoint directory exists "
-                f'"{settings.CHECKPOINT_PATH}" and is readable.'
-            )
+        if not self.use_redis_checkpoint:
+            # ensure the checkpoint dirpath is valid
+            if not os.path.exists(settings.CHECKPOINT_PATH):
+                raise RuntimeError(
+                    f"Ensure the checkpoint directory exists "
+                    f'"{settings.CHECKPOINT_PATH}" and is readable.'
+                )
 
-        if not os.access(settings.CHECKPOINT_PATH, os.W_OK | os.R_OK):
-            raise RuntimeError(
-                f'Ensure the checkpoint directory "{settings.CHECKPOINT_PATH}"'
-                f" is read/writable"
-            )
+            if not os.access(settings.CHECKPOINT_PATH, os.W_OK | os.R_OK):
+                raise RuntimeError(
+                    f'Ensure the checkpoint directory "{settings.CHECKPOINT_PATH}"'
+                    f" is read/writable"
+                )
 
         self.tree.display()
 
