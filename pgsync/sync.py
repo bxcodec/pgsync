@@ -70,8 +70,8 @@ class Sync(Base, metaclass=Singleton):
         verbose: bool = False,
         validate: bool = True,
         repl_slots: bool = True,
-        use_redis_checkpoint: bool = False
-        ** kwargs,
+        use_redis_checkpoint: bool = False,
+        **kwargs,
     ) -> None:
         """Constructor."""
         self.index: str = document.get("index") or document["database"]
