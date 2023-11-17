@@ -47,6 +47,9 @@ STREAM_RESULTS = env.bool("STREAM_RESULTS", default=True)
 # db polling interval
 POLL_INTERVAL = env.float("POLL_INTERVAL", default=0.1)
 
+# parameter to tell the pgsync to ignore delete ops
+SHOULD_IGNORE_DELETE_OP = env.bool("SHOULD_IGNORE_DELETE_OP", default=False)
+
 # Elasticsearch/OpenSearch:
 ELASTICSEARCH_API_KEY = env.str("ELASTICSEARCH_API_KEY", default=None)
 ELASTICSEARCH_API_KEY_ID = env.str("ELASTICSEARCH_API_KEY_ID", default=None)

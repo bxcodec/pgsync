@@ -70,7 +70,6 @@ class Sync(Base, metaclass=Singleton):
         verbose: bool = False,
         validate: bool = True,
         repl_slots: bool = True,
-        use_redis_checkpoint: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -95,7 +94,6 @@ class Sync(Base, metaclass=Singleton):
             settings.CHECKPOINT_PATH, f".{self.__name}"
         )
         self.redis_queue: RedisQueue = RedisQueue(self.__name)
-        self.use_redis_checkpoint = use_redis_checkpoint
         self.redis_checkpoint: RedisCheckpoint = RedisCheckpoint(self.__name)
 
         self.tree: Tree = Tree(self.models)
@@ -158,7 +156,7 @@ class Sync(Base, metaclass=Singleton):
                 f'Make sure you have run the "bootstrap" command.'
             )
 
-        if not self.use_redis_checkpoint:
+        if not settings.USE_REDIS_CHECKPOINT:
             # ensure the checkpoint dirpath is valid
             if not os.path.exists(settings.CHECKPOINT_PATH):
                 raise RuntimeError(
@@ -305,7 +303,7 @@ class Sync(Base, metaclass=Singleton):
         """Drop the database triggers and replication slot."""
 
         join_queries: bool = settings.JOIN_QUERIES
-        if self.use_redis_checkpoint:
+        if settings.USE_REDIS_CHECKPOINT:
             self.redis_checkpoint.deleteCheckpoint()
         else:
             try:
@@ -863,7 +861,7 @@ class Sync(Base, metaclass=Singleton):
                 payloads,
             )
 
-        if payload.tg_op == DELETE:
+        if payload.tg_op == DELETE and not settings.SHOULD_IGNORE_DELETE_OP:
             filters = self._delete_op(
                 node,
                 filters,
@@ -1025,7 +1023,7 @@ class Sync(Base, metaclass=Singleton):
         :return: The current checkpoint value.
         :rtype: int
         """
-        if self.use_redis_checkpoint:
+        if settings.USE_REDIS_CHECKPOINT:
             self._checkpoint: int = self.redis_checkpoint.getCheckpointValue()
         elif os.path.exists(self._checkpoint_file):
             with open(self._checkpoint_file, "r") as fp:
@@ -1045,7 +1043,7 @@ class Sync(Base, metaclass=Singleton):
         if value is None:
             raise ValueError("Cannot assign a None value to checkpoint")
 
-        if self.use_redis_checkpoint:
+        if settings.USE_REDIS_CHECKPOINT:
             self.redis_checkpoint.setCheckpoint(value)
         else:
             with open(self._checkpoint_file, "w+") as fp:
@@ -1448,30 +1446,19 @@ def main(
     with Timer():
         if analyze:
             for document in config_loader(config):
-                sync: Sync = Sync(document,
-                                  verbose=verbose,
-                                  use_redis_checkpoint=settings.USE_REDIS_CHECKPOINT,
-                                  **kwargs)
+                sync: Sync = Sync(document, verbose=verbose, **kwargs)
                 sync.analyze()
 
         elif polling:
             while True:
                 for document in config_loader(config):
-                    sync: Sync = Sync(
-                        document,
-                        verbose=verbose,
-                        use_redis_checkpoint=settings.USE_REDIS_CHECKPOINT,
-                        **kwargs)
-
+                    sync: Sync = Sync(document, verbose=verbose, **kwargs)
                     sync.pull()
                 time.sleep(settings.POLL_INTERVAL)
 
         else:
             for document in config_loader(config):
-                sync: Sync = Sync(document,
-                                  verbose=verbose,
-                                  use_redis_checkpoint=settings.USE_REDIS_CHECKPOINT,
-                                  **kwargs)
+                sync: Sync = Sync(document, verbose=verbose, **kwargs)
                 sync.pull()
                 if daemon:
                     sync.receive(nthreads_polldb)
